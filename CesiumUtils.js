@@ -5,6 +5,8 @@ function CesiumUtils() {
 
 }
 
+CesiumUtils.EARTH_RADIUS = 6378137.0;
+
 CesiumUtils.flyTo = function (camera, longitude, latitude, height) {
     camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(longitude, latitude, height),
@@ -181,10 +183,10 @@ CesiumUtils.getBoundingPoints = function (point, distance) {
     let lng = cartographic.longitude;
     let lat = cartographic.latitude;
 
-    let offsetLng = 2 * Math.asin(Math.sin(distance / (2 * GeoMath.EARTH_RADIUS)) / Math.cos(lng));
+    let offsetLng = 2 * Math.asin(Math.sin(distance / (2 * CesiumUtils.EARTH_RADIUS)) / Math.cos(lng));
     // offsetLng = Cesium.Math.toDegrees(offsetLng);
 
-    let offsetLat = distance / GeoMath.EARTH_RADIUS;
+    let offsetLat = distance / CesiumUtils.EARTH_RADIUS;
     // offsetLat = Cesium.Math.toDegrees(offsetLat);
 
     return [
