@@ -83,44 +83,73 @@ CesiumUtils.setTilesetHeight = function (tileset, height) {
     tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
 };
 
-CesiumUtils.setTilesetMatrix = function (tileset, location) {
+/*CesiumUtils.setTilesetMatrix = function (tileset, location) {
     let origin = Cesium.Cartesian3.fromDegrees(location[0], location[1], location[2]);
     let mat4 = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
     let rotMat3 = Cesium.Matrix3.fromRotationZ(Cesium.Math.toRadians(location[3]));
     let rotMat4 = Cesium.Matrix4.fromRotationTranslation(rotMat3);
     // tileset._root.transform = Cesium.Matrix4.multiply(mat4, rotMat4, new Cesium.Matrix4());
     Cesium.Matrix4.multiply(mat4, rotMat4, tileset._root.transform);
-};
+};*/
 
-CesiumUtils.setTilesetMatrixFromHpr = function (tileset, position, orientation) {
+/**
+ * 设置3dtiles模型位置、角度、大小
+ * NOTE: 可以直接传tileset._root.transform
+ */
+CesiumUtils.setTilesetMatrix = function (modelMatrix, position, orientation, scale) {
     let origin = Cesium.Cartesian3.fromDegrees(position[0], position[1], position[2]);
     let mat4 = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
-    let rotMat3 = Cesium.Matrix3.fromHeadingPitchRoll(new Cesium.HeadingPitchRoll(
+    let rotateMat3 = Cesium.Matrix3.fromHeadingPitchRoll(new Cesium.HeadingPitchRoll(
         Cesium.Math.toRadians(orientation[0]),
         Cesium.Math.toRadians(orientation[1]),
         Cesium.Math.toRadians(orientation[2])
     ));
-    let rotMat4 = Cesium.Matrix4.fromRotationTranslation(rotMat3);
-    Cesium.Matrix4.multiply(mat4, rotMat4, tileset._root.transform);
+    let rotMat4 = Cesium.Matrix4.fromRotationTranslation(rotateMat3);
+    Cesium.Matrix4.multiply(mat4, rotMat4, modelMatrix);
+    let scaleMat4 = Cesium.Matrix4.fromUniformScale(scale || 1);
+    Cesium.Matrix4.multiply(modelMatrix, scaleMat4, modelMatrix);
 };
 
-CesiumUtils.setGltfModelMatrix = function (gltf, location) {
-    let center = Cesium.Cartesian3.fromDegrees(location[0], location[1], location[2]);
-    let hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(location[3]), 0, 0);
-    gltf.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(center, hpr);
+/**
+ * 设置gltf模型位置、角度、大小
+ * NOTE: 不能传model.modelMatrix
+ */
+CesiumUtils.setGltfModelMatrix = function (model, location, orientation, scale) {
+    // 方法一：
+    /*let origin = Cesium.Cartesian3.fromDegrees(location[0], location[1], location[2]);
+    let mat4 = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
+    let rotateMat3 = Cesium.Matrix3.fromHeadingPitchRoll(new Cesium.HeadingPitchRoll(
+        Cesium.Math.toRadians(orientation[0]),
+        Cesium.Math.toRadians(orientation[1]),
+        Cesium.Math.toRadians(orientation[2])
+    ));
+    Cesium.Matrix4.multiplyByMatrix3(mat4, rotateMat3, model.modelMatrix);
+    let scaleMat4 = Cesium.Matrix4.fromUniformScale(scale || 1);
+    Cesium.Matrix4.multiply(model.modelMatrix, scaleMat4, model.modelMatrix);*/
 
+    // 方法二：
+    let origin = Cesium.Cartesian3.fromDegrees(location[0], location[1], location[2]);
+    let hpr = new Cesium.HeadingPitchRoll(
+        Cesium.Math.toRadians(orientation[0]),
+        Cesium.Math.toRadians(orientation[1]),
+        Cesium.Math.toRadians(orientation[2])
+    );
+    model.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(origin, hpr);
+    let scaleMat4 = Cesium.Matrix4.fromUniformScale(scale || 1);
+    Cesium.Matrix4.multiply(model.modelMatrix, scaleMat4, model.modelMatrix);
 };
 
-CesiumUtils.setGltfModelOffset = function (gltf, location) {
+/*CesiumUtils.setGltfEntityOffset = function (gltf, location) {
     let center = Cesium.Cartesian3.fromDegrees(location[0], location[1], location[2]);
     gltf.position = center;
     gltf.orientation = Cesium.Transforms.headingPitchRollQuaternion(center, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(location[3]), 0, 0));
-};
+};*/
 
 /**
  * @param {Array<Cartesian3>} positions. 闭合的坐标点，即第一个点的坐标与最后一个点完全相同
  */
 CesiumUtils.getClippingPlanes = function (positions) {
+    positions.push(positions[0]);
     let modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(positions[0]);
     let matrix = Cesium.Matrix4.inverse(modelMatrix, new Cesium.Matrix4());
 
@@ -166,9 +195,9 @@ CesiumUtils.getClippingPlanes = function (positions) {
     return new Cesium.ClippingPlaneCollection({
         planes: clippingPlanes,
         modelMatrix: modelMatrix,
-        // edgeWidth: 1.0,
-        // enabled: true,
-        // edgeColor: Cesium.Color.WHITE
+        edgeWidth: 1.0,
+        enabled: true,
+        edgeColor: Cesium.Color.WHITE
     });
 };
 
