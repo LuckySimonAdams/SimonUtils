@@ -146,9 +146,157 @@ CesiumUtils.setGltfModelMatrix = function (model, location, orientation, scale) 
 };*/
 
 /**
- * @param {Array<Cartesian3>} positions. 闭合的坐标点，即第一个点的坐标与最后一个点完全相同
+ * 计算两点之间的距离。与Cesium.Cartesian3.distance()计算结果偏差较大
+ * @param {Cartesian3} point1
+ * @param {Cartesian3} point2
+ */
+CesiumUtils.getDistance = function (point1, point2) {
+    let cartographic1 = Cesium.Cartographic.fromCartesian(point1);
+    let cartographic2 = Cesium.Cartographic.fromCartesian(point2);
+    let offsetLng = cartographic1.longitude - cartographic2.longitude;
+    let offsetLat = cartographic1.latitude - cartographic2.latitude;
+
+    let result = 2 * Math.asin(Math.sqrt(Math.pow(Math.sin(offsetLng / 2), 2) +
+        Math.cos(cartographic1.latitude) * Math.cos(cartographic2.latitude) * Math.pow(Math.sin(offsetLat / 2), 2)
+    ));
+    result *= GeoMath.EARTH_RADIUS;
+    return result;
+};
+
+/**
+ * google算法计算距离。比较接近Cesium.Cartesian3.distance()
+ * @param {Cartesian3} point1
+ * @param {Cartesian3} point2
+ */
+CesiumUtils.getDistance2 = function (point1, point2) {
+    let cartographic1 = Cesium.Cartographic.fromCartesian(point1);
+    let cartographic2 = Cesium.Cartographic.fromCartesian(point2);
+    let lng1 = cartographic1.longitude;
+    let lat1 = cartographic1.latitude;
+    let lng2 = cartographic2.longitude;
+    let lat2 = cartographic2.latitude;
+
+    // Math.Acos(Math.Cos(radLat1) * Math.Cos(radLat2) * Math.Cos(radLng1 - radLng2) + Math.Sin(radLat1) * Math.Sin(radLat2));
+    let result = Math.acos(Math.cos(lat1) * Math.cos(lat2) * Math.cos(lng1 - lng2) + Math.sin(lat1) * Math.sin(lat2));
+    result *= GeoMath.EARTH_RADIUS;
+    return result;
+};
+
+/**
+ * 计算多个点的包围盒
+ * @param {Array<Cartesian3>} positions
+ */
+CesiumUtils.getBoundingBox = function (positions) {
+    let cartographics = Cesium.Ellipsoid.WGS84.cartesianArrayToCartographicArray(positions);
+    let bbox = [Infinity, Infinity, -Infinity, -Infinity];    // minX, minY, maxX, maxY
+
+    for (let i = 0; i < cartographics.length; i++) {
+        let cartographic = cartographics[i];
+        if (bbox[0] > cartographic.longitude) {
+            bbox[0] = cartographic.longitude;
+        }
+        if (bbox[1] > cartographic.latitude) {
+            bbox[1] = cartographic.latitude;
+        }
+        if (bbox[2] < cartographic.longitude) {
+            bbox[2] = cartographic.longitude;
+        }
+        if (bbox[3] < cartographic.latitude) {
+            bbox[3] = cartographic.latitude;
+        }
+    }
+
+    return bbox;
+};
+
+/**
+ * 计算多个点的中心点
+ * @param {Array<Cartesian3>} positions
+ */
+CesiumUtils.getCenter = function (positions) {
+    let result = new Cesium.Cartesian3();
+    for (let i = 0, len = positions.length; i < len; ++i) {
+        Cesium.Cartesian3.add(positions[i], result, result);
+    }
+    Cesium.Cartesian3.multiplyByScalar(result, 1 / len, result);
+    return result;
+};
+
+/**
+ * 计算多个点的中心点
+ * @param {Array<Cartesian3>} positions
+ */
+CesiumUtils.getCenter2 = function (positions) {
+    let x = [], y = [];
+
+    positions.forEach(function (position) {
+        let cartographic = Cesium.Cartographic.fromCartesian(position);
+        x.push(cartographic.longitude);
+        y.push(cartographic.latitude);
+    });
+
+    let x0 = 0, y0 = 0,
+        x1 = 0, y1 = 0,
+        centerX = 0, centerY = 0,
+        area = 0,
+        a = 0;
+
+    for (let i = 0; i < positions.length; i++) {
+        x0 = x[i];
+        y0 = y[i];
+
+        if (i === positions.length - 1) {
+            x1 = x[0];
+            y1 = y[0];
+        } else {
+            x1 = x[i + 1];
+            y1 = y[i + 1];
+        }
+
+        a = x0 * y1 - x1 * y0;
+        area += a;
+        centerX += (x0 + x1) * a;
+        centerY += (y0 + y1) * a;
+    }
+
+    area /= 2;
+    centerX /= (area * 6);
+    centerY /= (area * 6);
+
+    return Cesium.Cartesian3.fromRadians(centerX, centerY);
+};
+
+/**
+ * 根据中心点和距离计算四个顶点
+ * @param {Cartesian3} point
+ * @param {Number} distance
+ * @result {Array}
+ */
+CesiumUtils.getBoundingPoints = function (point, distance) {
+    let cartographic = Cesium.Cartographic.fromCartesian(point);
+    let lng = cartographic.longitude;
+    let lat = cartographic.latitude;
+
+    let offsetLng = 2 * Math.asin(Math.sin(distance / (2 * CesiumUtils.EARTH_RADIUS)) / Math.cos(lng));
+    // offsetLng = Cesium.Math.toDegrees(offsetLng);
+
+    let offsetLat = distance / CesiumUtils.EARTH_RADIUS;
+    // offsetLat = Cesium.Math.toDegrees(offsetLat);
+
+    return [
+        Cesium.Cartesian3.fromRadians(lng - offsetLng, lat + offsetLat),    // leftTop
+        Cesium.Cartesian3.fromRadians(lng + offsetLng, lat + offsetLat),    // rightTop
+        Cesium.Cartesian3.fromRadians(lng + offsetLng, lat - offsetLat),    // rightBottom,
+        Cesium.Cartesian3.fromRadians(lng - offsetLng, lat - offsetLat),    // leftBottom
+    ];
+};
+
+/**
+ * 获取裁剪面
+ * @param {Array<Cartesian3>} positions.
  */
 CesiumUtils.getClippingPlanes = function (positions) {
+    // NOTE：闭合的坐标点，即第一个点的坐标与最后一个点完全相同
     positions.push(positions[0]);
     let modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(positions[0]);
     let matrix = Cesium.Matrix4.inverse(modelMatrix, new Cesium.Matrix4());
@@ -202,28 +350,38 @@ CesiumUtils.getClippingPlanes = function (positions) {
 };
 
 /**
- * 根据中心点和距离计算四个顶点
- * @param {Cartesian3} point
- * @param {Number} distance
- * @result {Array}
+ * 计算当前视角的矩形范围。比camera.computeViewRectangle()计算的范围要小
+ * @param {Viewer} viewer
+ * @return {Rectangle|undefined}
  */
-CesiumUtils.getBoundingPoints = function (point, distance) {
-    let cartographic = Cesium.Cartographic.fromCartesian(point);
-    let lng = cartographic.longitude;
-    let lat = cartographic.latitude;
+CesiumUtils.getCurrentViewRect = function (viewer) {
+    let scene = viewer.scene;
+    let camera = scene.camera;
+    let canvas = scene.canvas;
+    let topLeft=  camera.pickEllipsoid(new Cesium.Cartesian2(0, 0));
+    let bottomRight = camera.pickEllipsoid(new Cesium.Cartesian2(canvas.width, canvas.height));
 
-    let offsetLng = 2 * Math.asin(Math.sin(distance / (2 * CesiumUtils.EARTH_RADIUS)) / Math.cos(lng));
-    // offsetLng = Cesium.Math.toDegrees(offsetLng);
+    if (!topLeft && !bottomRight) return;
 
-    let offsetLat = distance / CesiumUtils.EARTH_RADIUS;
-    // offsetLat = Cesium.Math.toDegrees(offsetLat);
+    let cartographic1, cartographic2;
+    if (topLeft && bottomRight) {
+        // canvas的左上角和右下角都在地球上
+        cartographic1 = Cesium.Cartographic.fromCartesian(topLeft);
+        cartographic2 = Cesium.Cartographic.fromCartesian(bottomRight);
+    } else if (!topLeft && bottomRight) {
+        // canvas的左上角不在地球上，但右下角在地球上
+        let topLeft2 = undefined;
+        let yIndex = 0;
+        do {
+            // 这里每次10像素递加，一是10像素相差不大，二是为了提高程序运行效率
+            yIndex <= canvas.height ? yIndex += 10 : canvas.height;
+            topLeft2 = camera.pickEllipsoid(new Cesium.Cartesian2(0, yIndex));
+        } while (!topLeft2);
+        cartographic1 = Cesium.Cartographic.fromCartesian(topLeft2);
+        cartographic2 = Cesium.Cartographic.fromCartesian(bottomRight);
+    }
 
-    return [
-        Cesium.Cartesian3.fromRadians(lng - offsetLng, lat + offsetLat),    // leftTop
-        Cesium.Cartesian3.fromRadians(lng + offsetLng, lat + offsetLat),    // rightTop
-        Cesium.Cartesian3.fromRadians(lng + offsetLng, lat - offsetLat),    // rightBottom,
-        Cesium.Cartesian3.fromRadians(lng - offsetLng, lat - offsetLat),    // leftBottom
-    ];
+    return new Cesium.Rectangle(cartographic1.longitude, cartographic2.latitude, cartographic2.longitude, cartographic1.latitude);
 };
 
 export {CesiumUtils}
